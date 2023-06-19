@@ -1,8 +1,10 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net/http"
+	"os"
 
 	"github.com/bharatkalra244/car-app/models"
 	"github.com/bharatkalra244/car-app/storage"
@@ -13,7 +15,7 @@ import (
 
 type Car struct {
 	CAR_NAME    string `json:"carName"`
-	CAR_HP      int32  `json:"carHp"`
+	CAR_HP      uint   `json:"carHp"`
 	CAR_COMPANY string `json:"carCompany"`
 	CAR_ENGINE  string `json:"carEngine"`
 	//	CarID       int64  `json:"carID"`
@@ -48,6 +50,27 @@ func (r *Repository) CreateCar(context *fiber.Ctx) error {
 }
 
 func (r *Repository) DeleteCar(context *fiber.Ctx) error {
+	carModel := models.Cars{}
+	id := context.Params("id")
+	if id == "" {
+		context.Status(http.StatusInternalServerError).JSON(&fiber.Map{
+			"message": "id cannot be empty",
+		})
+		return nil
+	}
+
+	err := r.DB.Delete(carModel, id)
+
+	if err.Error != nil {
+		context.Status(http.StatusBadRequest).JSON(&fiber.Map{
+			"message": "could not delete book",
+		})
+		return err.Error
+	}
+	context.Status(http.StatusOK).JSON(&fiber.Map{
+		"message": "car deleted sucessfully",
+	})
+	return nil
 }
 
 func (r *Repository) GetCars(context *fiber.Ctx) error {
@@ -68,6 +91,28 @@ func (r *Repository) GetCars(context *fiber.Ctx) error {
 }
 
 func (r *Repository) GetCarsByID(context *fiber.Ctx) error {
+
+	id := context.Params("id")
+	carModel := &models.Cars{}
+	if id == "" {
+		context.Status(http.StatusInternalServerError).JSON(&fiber.Map{
+			"message": "id cannot be empty",
+		})
+		return nil
+	}
+	fmt.Println("The ID is ", id)
+
+	err := r.DB.Where("id = ?", id).First(carModel).Error
+	if err != nil {
+		context.Status(http.StatusBadRequest).JSON(
+			&fiber.Map{"message": "could not get the car"})
+		return err
+	}
+	context.Status(http.StatusOK).JSON(&fiber.Map{
+		"message": "Car ID fetched sucessfully",
+		"data":    carModel,
+	})
+	return nil
 }
 
 func (r *Repository) SetupRoutes(app *fiber.App) {
@@ -84,9 +129,23 @@ func main() {
 		log.Fatal(err)
 	}
 
+	config := &storage.Config{
+		Host:     os.Getenv("DB_Host"),
+		Port:     os.Getenv("DB_PORT"),
+		Password: os.Getenv("DB_PASS"),
+		User:     os.Getenv("DB_USER"),
+		SSLMode:  os.Getenv("DB_SSLMODE"),
+		DBName:   os.Getenv("DB_NAME"),
+	}
+
 	db, err := storage.NewConnection(config)
 	if err != nil {
 		log.Fatal(err, "Could Not Load The Database !")
+	}
+
+	err = models.MigrateCars(db)
+	if err != nil {
+		log.Fatal("Could not migrate the database")
 	}
 
 	r := Repository{
